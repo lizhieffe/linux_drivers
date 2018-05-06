@@ -21,3 +21,4 @@ module_init(hello_world_init);
 module_exit(hello_world_exit);
 MODULE_AUTHOR("lizhi");
 MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Sample module with bare skeleton");
