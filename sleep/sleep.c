@@ -1,3 +1,6 @@
+/*
+ * Example for sleep using waitqueue.
+ */
 #include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
