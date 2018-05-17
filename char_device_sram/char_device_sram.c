@@ -8,6 +8,7 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>  // Required for the copy_to_user() fn.
@@ -17,11 +18,14 @@
 
 #define SRAM_SIZE 10
 
+static DEFINE_MUTEX(device_list_lock);
+
 struct pcf2127 {
   struct cdev cdev;
   unsigned char *sram_data;
   struct i2c_client *client;
   int sram_size;
+  int users;
 };
 
 static unsigned int sram_major = 0;
@@ -30,47 +34,77 @@ static struct class *sram_class = NULL;
 static struct pcf2127 my_dev = {
   .sram_data = NULL,
   .client = NULL,
+  .users = 0,
 };
 
 static int sram_open(struct inode *inode, struct file *filp) {
   unsigned int maj = imajor(inode);
   unsigned int min = iminor(inode);
-  pr_info("===lizhi opening file <%d,%d>\n", maj, min);
 
   struct pcf2127 *pcf = NULL;
   pcf = container_of(inode->i_cdev, struct pcf2127, cdev);
+
+  mutex_lock(&device_list_lock);
   pcf->sram_size = SRAM_SIZE;
 
   if (maj != sram_major || min < 0) {
-    pr_err("device not found\n");
+    pr_err("===lizhi device not found\n");
+    mutex_unlock(&device_list_lock);
     return -ENODEV;  // No such device
   }
 
   if (pcf->sram_data == NULL) {
     pcf->sram_data = kzalloc(pcf->sram_size, GFP_KERNEL);
     if (pcf->sram_data == NULL) {
-      pr_err("Open: memory allocation failed\n");
+      pr_err("===lizhi Open: memory allocation failed\n");
+      mutex_unlock(&device_list_lock);
       return -ENOMEM;
     }
   }
 
+  pcf->users++;
+  pr_info("===lizhi opening file <%d,%d>, total users: %d\n",
+      maj, min, pcf->users);
   // Set the private data on open so that the other file operation handler can
   // use it later.
   filp->private_data = pcf;
-  pr_info("===lizhi file private data is set");
+  mutex_unlock(&device_list_lock);
+
+  return 0;
+}
+
+static int sram_release(struct inode *inode, struct file *filp) {
+  unsigned int maj = imajor(inode);
+  unsigned int min = iminor(inode);
+
+  struct pcf2127 *pcf = NULL;
+  pcf = container_of(inode->i_cdev, struct pcf2127, cdev);
+
+  mutex_lock(&device_list_lock);
+  filp->private_data = NULL;
+
+  /* last close? */
+  pcf->users--;
+  if (!pcf->users) {
+    // TODO: do necessary clean up for initialized resources, after we add logic
+    // to init resource.
+  }
+  pr_info("===lizhi releasing file <%d,%d>, total users: %d\n",
+      maj, min, pcf->users);
+  mutex_unlock(&device_list_lock);
+
   return 0;
 }
 
 static char msg[256] = "abcd\n";
 
 // Handler for file ops.
-static int dev_release(struct inode *, struct file *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
 static ssize_t dev_read(struct file *, char *, size_t, loff_t *);
 
 static struct file_operations eep_fops = {
   .open = sram_open,
-  .release = dev_release,
+  .release = sram_release,
   .read = dev_read,
   .write = dev_write,
 };
@@ -103,11 +137,6 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
         error_count);
     return -EFAULT;  // Failed -- return a bad address message (i.e. -14)
   }
-}
-
-static int dev_release(struct inode *inodep, struct file *filep){
-  printk(KERN_ALERT "EBBChar: Device successfully closed\n");
-  return 0;
 }
 
 static int __init my_init(void) {
