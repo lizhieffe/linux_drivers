@@ -1,5 +1,5 @@
 /**
- * Char device driver. To use, sudo open one of the /dev/eep-mem[0-7] device.
+ * Char device driver. To use, sudo open the /dev/sram-dev device.
  */
 #include <linux/cdev.h>
 #include <linux/fs.h>
@@ -96,48 +96,86 @@ static int sram_release(struct inode *inode, struct file *filp) {
   return 0;
 }
 
-static char msg[256] = "abcd\n";
+static int number_writes = 0;
+// |filp| is the file to write, |buf| contains the bytes in user space that user
+// wants to write, |count| is the size of |buf|, f_pos is the position in the
+// kernel space destination to start writing.
+ssize_t eeprom_write(struct file *filp, const char __user *buf, size_t count,
+    loff_t *f_pos) {
+  struct pcf2127 *pcf = NULL;
 
-// Handler for file ops.
-static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
-static ssize_t dev_read(struct file *, char *, size_t, loff_t *);
+  mutex_lock(&device_list_lock);
+  number_writes++;
+  printk(KERN_ALERT "EBBChar: Device has been write %d time(s)\n", number_writes);
+
+  printk("===lizhi eeprom_write is called: buf = %s, count = %ld, f_pos = %lld",
+      buf, count, *f_pos);
+
+  pcf = filp->private_data;  // private_data is a void *
+
+  // Writing beyond the end of data allocated mem is not allowed.
+  if (*f_pos >= pcf->sram_size) {
+    mutex_unlock(&device_list_lock);
+    return -EINVAL;
+  }
+
+  if (*f_pos + count > pcf->sram_size) {
+    count = pcf->sram_size - *f_pos;
+  }
+
+  if (copy_from_user(pcf->sram_data, buf, count) != 0) {
+    mutex_unlock(&device_list_lock);
+    return -EFAULT;
+  }
+
+  printk("===lizhi wrote %ld bytes", count);
+  *f_pos += count;
+  mutex_unlock(&device_list_lock);
+  return count;
+}
+
+static int number_reads = 0;
+ssize_t eeprom_read(struct file *filp, char __user *buf, size_t count,
+    loff_t *f_pos) {
+  struct pcf2127 *pcf = NULL;
+  
+  mutex_lock(&device_list_lock);
+  number_reads++;
+  printk(KERN_ALERT "===lizhi: Device has been read %d time(s)\n", number_reads);
+
+  printk("===lizhi eeprom_read is called: count = %ld, f_pos = %lld",
+      count, *f_pos);
+
+  pcf = filp->private_data;
+
+  if (*f_pos >= pcf->sram_size) {
+    mutex_unlock(&device_list_lock);
+    return 0;
+  }
+
+  if (*f_pos + count > pcf->sram_size) {
+    count = pcf->sram_size - *f_pos;
+  }
+
+  if (copy_to_user(buf, pcf->sram_data, count) != 0) {
+    mutex_unlock(&device_list_lock);
+    return -EIO;
+  }
+
+  printk("===lizhi read %ld bytes", count);
+  *f_pos += count;
+  mutex_unlock(&device_list_lock);
+  return count;
+}
 
 static struct file_operations eep_fops = {
   .open = sram_open,
   .release = sram_release,
-  .read = dev_read,
-  .write = dev_write,
+  .read = eeprom_read,
+  .write = eeprom_write,
 };
 
 dev_t dev_num;  // uint32. major/minor number
-
-static int number_writes = 0;
-static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset) {
-  number_writes++;
-  printk(KERN_ALERT "EBBChar: Device has been write %d time(s)\n", number_writes);
-  return 0;
-}
-
-static int number_reads = 0;
-static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *offset) {
-  int error_count;
-
-  number_reads++;
-  printk(KERN_ALERT "===lizhi: Device has been read %d time(s)\n", number_reads);
-
-  // copy_to_user has the format (* to, *from, size) and return 0 on success
-  error_count = copy_to_user(buffer, msg, strlen(msg));
-
-  if (error_count == 0) {
-    printk(KERN_INFO "===lizhi: Sent %ld characters to the user\n",
-        strlen(msg));
-    return 0;
-  } else {
-    printk(KERN_ALERT "===lizhi: Failed to send %d characters to the user\n",
-        error_count);
-    return -EFAULT;  // Failed -- return a bad address message (i.e. -14)
-  }
-}
 
 static int __init my_init(void) {
   int err;
