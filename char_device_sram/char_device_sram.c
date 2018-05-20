@@ -9,9 +9,11 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/mutex.h>
+#include <linux/poll.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>  // Required for the copy_to_user() fn.
+#include <linux/wait.h>
 
 #define EEP_DEVICE_NAME "sram-dev"
 #define EEP_CLASS "sram-class"
@@ -19,6 +21,10 @@
 #define SRAM_SIZE 10
 
 static DEFINE_MUTEX(device_list_lock);
+
+static DECLARE_WAIT_QUEUE_HEAD(write_queue);
+static DECLARE_WAIT_QUEUE_HEAD(read_queue);
+static bool ready_to_read = false;
 
 struct pcf2127 {
   struct cdev cdev;
@@ -130,6 +136,10 @@ ssize_t eeprom_write(struct file *filp, const char __user *buf, size_t count,
 
   printk("===lizhi wrote %ld bytes", count);
   *f_pos += count;
+  
+  ready_to_read = true;
+  wake_up_interruptible(&read_queue);
+
   mutex_unlock(&device_list_lock);
   return count;
 }
@@ -168,11 +178,37 @@ ssize_t eeprom_read(struct file *filp, char __user *buf, size_t count,
   return count;
 }
 
+
+static unsigned int eep_poll(struct file *file, poll_table *wait) {
+  unsigned int reval_mask;
+  reval_mask = 0;
+
+  pr_info("===lizhi eep_poll waiting for ready");
+
+  poll_wait(file, &write_queue, wait);
+  poll_wait(file, &read_queue, wait);
+
+  mutex_lock(&device_list_lock);
+  if (true) {
+    reval_mask |= (POLLOUT | POLLWRNORM);
+    pr_info("===lizhi eep_poll ready to write");
+  }
+  if (ready_to_read) {
+    reval_mask |= (POLLIN | POLLRDNORM);
+    pr_info("===lizhi eep_poll ready to read");
+    ready_to_read = false;  // TODO: there can still be some race condition.
+  }
+  mutex_unlock(&device_list_lock);
+
+  return reval_mask;
+}
+
 static struct file_operations eep_fops = {
   .open = sram_open,
   .release = sram_release,
   .read = eeprom_read,
   .write = eeprom_write,
+  .poll = eep_poll,
 };
 
 dev_t dev_num;  // uint32. major/minor number
