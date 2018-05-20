@@ -4,7 +4,26 @@
 #include <linux/platform_device.h>
 
 static int pdrv_probe(struct platform_device *pdev) {
+  struct resource *res1, *res2;
+  // void *reg1, *reg2;
+  int irqnum;
+
   pr_info("===lizhi platform device probed");
+
+  res1 = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+  if (!res1) {
+    pr_err("First resource not available");
+    return -1;
+  }
+  res2 = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+  if (!res2) {
+    pr_err("Second resource not available");
+    return -1;
+  }
+
+  irqnum = platform_get_irq(pdev, 0);
+  pr_info("\nIRQ number of device: %d\n", irqnum);
+
   return 0;
 }
 
@@ -18,7 +37,7 @@ static struct platform_driver pdrv = {
   .probe = pdrv_probe,
   .remove = pdrv_remove,
   .driver = {
-    .name = KBUILD_MODNAME,
+    .name = "lizhi-device",
     .owner = THIS_MODULE,
   },
 };
