@@ -1,3 +1,6 @@
+// This code contains the driver for ../platform_device, which register the
+// device to the system.
+
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>

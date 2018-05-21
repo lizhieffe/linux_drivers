@@ -1,10 +1,13 @@
+// This code simply register a platform device. It is supposed to be used
+// together with ../platform_driver which contains the driver for the device.
+
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 
-#define JZ4740_UDC_BASE_ADDR 0x1234578
-#define JZ4740_UDC_BASE_ADDR2 0x1234678
+#define JZ4740_UDC_BASE_ADDR 0x40400000
+#define JZ4740_UDC_BASE_ADDR2 0x40410000
 #define JZ4740_IRQ_UDC 3
 
 struct lizhi_gpios {
