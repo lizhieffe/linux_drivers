@@ -6,6 +6,9 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 
+// After a device is registered, the system will look for the matching driver.
+// If there exists one, the driver manager will invoke the driver, and then the
+// probe method of driver will be called.
 static int pdrv_probe(struct platform_device *pdev) {
   struct resource *res1, *res2;
   // void *reg1, *reg2;
