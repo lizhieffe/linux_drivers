@@ -1,3 +1,6 @@
+// This platform driver is used to drive the device registered in DT. Please
+// check my rpi_linux repository which has a device called "hellokeys" in DT.
+
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -58,7 +61,7 @@ static const struct file_operations my_dev_fops = {
 // small device, needing only a single entry point.
 static struct miscdevice helloworld_miscdevice = {
   .minor = MISC_DYNAMIC_MINOR,
-  .name = "mydev",
+  .name = "mydev",  // the registered device can be found at /dev/mydev
   .fops = &my_dev_fops,
 };
 
